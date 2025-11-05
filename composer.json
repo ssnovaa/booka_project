@@ -7,6 +7,9 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
+        "google/apiclient": "2.18.3",
+        "google/auth": "1.42",
+        "guzzlehttp/guzzle": "7.9",
         "intervention/image": "^3.11",
         "intervention/image-laravel": "*",
         "james-heinrich/getid3": "^1.9",
