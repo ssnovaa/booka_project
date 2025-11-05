@@ -6,7 +6,20 @@ use Illuminate\Database\Eloquent\Model;
 
 class Listen extends Model
 {
-    protected $fillable = ['user_id', 'a_book_id', 'a_chapter_id', 'position'];
+    protected $fillable = [
+        'user_id',
+        'a_book_id',
+        'a_chapter_id',
+        'position',
+    ];
+
+    // Гарантируем, что в JSON position и id-шники уходят числами
+    protected $casts = [
+        'user_id'      => 'integer',
+        'a_book_id'    => 'integer',
+        'a_chapter_id' => 'integer',
+        'position'     => 'integer',
+    ];
 
     public function user()
     {
@@ -18,7 +31,6 @@ class Listen extends Model
         return $this->belongsTo(AChapter::class, 'a_chapter_id');
     }
 
-    // Добавляем связь с книгой
     public function book()
     {
         return $this->belongsTo(ABook::class, 'a_book_id');

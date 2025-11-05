@@ -88,13 +88,11 @@ class ABookController extends Controller
 
         $coverPath = $request->file('cover_file')->store('covers', 'public');
 
-// --- Генерация миниатюры через Intervention Image v3 ---
-$image = Image::read($request->file('cover_file')->getRealPath())
-    ->cover(200, 300); // аналог fit: кадрирование и центрирование под размер
-
-$thumbName = 'covers/thumb_' . basename($coverPath);
-Storage::disk('public')->put($thumbName, (string) $image->toJpeg(80));
-// --- /Блок миниатюры ---
+        // --- Генерация миниатюры через Intervention Image v3 ---
+        $image = Image::read($request->file('cover_file')->getRealPath())->cover(200, 300);
+        $thumbName = 'covers/thumb_' . basename($coverPath);
+        Storage::disk('public')->put($thumbName, (string) $image->toJpeg(80));
+        // --- /Блок миниатюры ---
 
         $author = Author::firstOrCreate(['name' => $validated['author']]);
 
@@ -106,7 +104,7 @@ Storage::disk('public')->put($thumbName, (string) $image->toJpeg(80));
             'description' => $validated['description'] ?? null,
             'duration' => $validated['duration'] ?? null,
             'cover_url' => $coverPath,
-            'thumb_url' => $thumbName, // <--- сохраняем миниатюру
+            'thumb_url' => $thumbName, // сохраняем миниатюру
         ]);
 
         $book->genres()->sync($validated['genres']);
@@ -161,14 +159,11 @@ Storage::disk('public')->put($thumbName, (string) $image->toJpeg(80));
 
             $newCoverPath = $request->file('cover_file')->store('covers', 'public');
 
-// --- Генерация миниатюры через Intervention Image v3 ---
-$image = Image::read($request->file('cover_file')->getRealPath())
-    ->cover(200, 300);
-
-$thumbName = 'covers/thumb_' . basename($newCoverPath);
-Storage::disk('public')->put($thumbName, (string) $image->toJpeg(80));
-// --- /Блок миниатюры ---
-
+            // --- Генерация миниатюры через Intervention Image v3 ---
+            $image = Image::read($request->file('cover_file')->getRealPath())->cover(200, 300);
+            $thumbName = 'covers/thumb_' . basename($newCoverPath);
+            Storage::disk('public')->put($thumbName, (string) $image->toJpeg(80));
+            // --- /Блок миниатюры ---
 
             $book->cover_url = $newCoverPath;
             $book->thumb_url = $thumbName;
@@ -187,6 +182,7 @@ Storage::disk('public')->put($thumbName, (string) $image->toJpeg(80));
 
         return redirect()->route('admin.abooks.index')->with('success', 'Книга обновлена');
     }
+
     // Удаление книги с файлами и связями
     public function destroy($id)
     {
@@ -197,7 +193,7 @@ Storage::disk('public')->put($thumbName, (string) $image->toJpeg(80));
             Storage::disk('public')->delete($coverPath);
         }
         if ($book->thumb_url) {
-            Storage::disk('public')->delete($book->thumb_url); // <--- удаляем миниатюру!
+            Storage::disk('public')->delete($book->thumb_url); // удаляем миниатюру
         }
 
         $book->chapters()->each(function ($chapter) {
@@ -221,8 +217,10 @@ Storage::disk('public')->put($thumbName, (string) $image->toJpeg(80));
     // ======================= [API: Каталог аудиокниг (JSON)] =======================
     public function apiIndex(Request $request)
     {
-        $query = ABook::with(['author', 'reader', 'genres']);
+        // Подгружаем series чтобы: 1) избежать N+1, 2) вернуть название серии и её id
+        $query = ABook::with(['author', 'reader', 'genres', 'series']);
 
+        // Поиск
         if ($search = $request->input('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('title', 'like', "%{$search}%")
@@ -233,21 +231,26 @@ Storage::disk('public')->put($thumbName, (string) $image->toJpeg(80));
             });
         }
 
+        // Фильтр по жанрам (id или name; можно через запятую)
         if ($genre = $request->input('genre')) {
-            $genres = explode(',', $genre);
-            $query->whereHas('genres', function ($q) use ($genres) {
-                $q->where(function($query) use ($genres) {
-                    foreach ($genres as $g) {
-                        if (is_numeric($g)) {
-                            $query->orWhere('genres.id', $g);
-                        } else {
-                            $query->orWhere('genres.name', 'like', "%$g%");
+            $genres = is_array($genre) ? $genre : explode(',', $genre);
+            $genres = array_filter(array_map('trim', $genres), fn($v) => $v !== '');
+            if (!empty($genres)) {
+                $query->whereHas('genres', function ($q) use ($genres) {
+                    $q->where(function ($w) use ($genres) {
+                        foreach ($genres as $g) {
+                            if (is_numeric($g)) {
+                                $w->orWhere('genres.id', $g);
+                            } else {
+                                $w->orWhere('genres.name', 'like', "%{$g}%");
+                            }
                         }
-                    }
+                    });
                 });
-            });
+            }
         }
 
+        // Фильтр по автору (id или name)
         if ($author = $request->input('author')) {
             $query->whereHas('author', function ($q) use ($author) {
                 if (is_numeric($author)) {
@@ -258,6 +261,7 @@ Storage::disk('public')->put($thumbName, (string) $image->toJpeg(80));
             });
         }
 
+        // Фильтр по чтецу (id или name)
         if ($reader = $request->input('reader')) {
             $query->whereHas('reader', function ($q) use ($reader) {
                 if (is_numeric($reader)) {
@@ -268,6 +272,35 @@ Storage::disk('public')->put($thumbName, (string) $image->toJpeg(80));
             });
         }
 
+        // ✅ Фильтр по серии: поддерживаем и series_id, и series (название)
+        if ($seriesId = $request->input('series_id')) {
+            $ids = is_array($seriesId) ? $seriesId : explode(',', $seriesId);
+            $ids = array_filter(array_map('trim', $ids), fn($v) => $v !== '');
+            if (!empty($ids)) {
+                $query->whereIn('series_id', $ids);
+            }
+        }
+        if ($series = $request->input('series')) {
+            $names = is_array($series) ? $series : explode(',', $series);
+            $names = array_filter(array_map('trim', $names), fn($v) => $v !== '');
+            if (!empty($names)) {
+                $query->whereHas('series', function ($q) use ($names) {
+                    $q->where(function ($w) use ($names) {
+                        foreach ($names as $n) {
+                            if (is_numeric($n)) {
+                                $w->orWhere('id', $n);
+                            } else {
+                                // срезаем типографические/обычные кавычки по краям
+                                $clean = trim($n, " \t\n\r\0\x0B\"'«»„“”");
+                                $w->orWhere('title', 'like', "%{$clean}%");
+                            }
+                        }
+                    });
+                });
+            }
+        }
+
+        // Сортировка
         if ($sort = $request->input('sort')) {
             if ($sort === 'new') {
                 $query->orderBy('created_at', 'desc');
@@ -276,39 +309,45 @@ Storage::disk('public')->put($thumbName, (string) $image->toJpeg(80));
             } elseif ($sort === 'duration') {
                 $query->orderBy('duration', 'desc');
             }
+            // при необходимости добавьте ветку popular/rating и т.п.
         } else {
             $query->orderBy('created_at', 'desc');
         }
 
+        // Пагинация
         $perPage = intval($request->input('per_page', 20));
         $books = $query->paginate($perPage)->withQueryString();
 
+        // Ответ
         $result = [
             'current_page' => $books->currentPage(),
-            'last_page' => $books->lastPage(),
-            'per_page' => $books->perPage(),
-            'total' => $books->total(),
-            'data' => $books->map(function ($book) {
+            'last_page'    => $books->lastPage(),
+            'per_page'     => $books->perPage(),
+            'total'        => $books->total(),
+            'data'         => $books->map(function ($book) {
                 return [
-                    'id' => $book->id,
-                    'title' => $book->title,
-                    'author' => $book->author?->name,
-                    'reader' => $book->reader?->name,
+                    'id'          => $book->id,
+                    'title'       => $book->title,
+                    'author'      => $book->author?->name,
+                    'reader'      => $book->reader?->name,
                     'description' => $book->description,
-                    'duration' => $book->duration,
-                    // КОРРЕКТНАЯ ссылка для эмулятора Android
-                    'cover_url' => $book->cover_url
+                    'duration'    => $book->duration,
+                    // Корректная ссылка для эмулятора Android
+                    'cover_url'   => $book->cover_url
                         ? str_replace(['127.0.0.1', 'localhost'], '10.0.2.2', url('/storage/' . $book->cover_url))
                         : null,
-                    'thumb_url' => $book->thumb_url
+                    'thumb_url'   => $book->thumb_url
                         ? str_replace(['127.0.0.1', 'localhost'], '10.0.2.2', url('/storage/' . $book->thumb_url))
                         : null,
-                    'genres' => $book->genres->map(function($genre) {
+                    'genres'      => $book->genres->map(function ($genre) {
                         return [
-                            'id' => $genre->id,
-                            'name' => $genre->name
+                            'id'   => $genre->id,
+                            'name' => $genre->name,
                         ];
                     })->values(),
+                    // ✅ Возвращаем ОБА поля — строковое название серии и её id
+                    'series'      => $book->series?->title,
+                    'series_id'   => $book->series_id,
                 ];
             }),
         ];
@@ -326,26 +365,28 @@ Storage::disk('public')->put($thumbName, (string) $image->toJpeg(80));
         $book = ABook::with(['author', 'reader', 'genres', 'series'])->findOrFail($id);
 
         $result = [
-            'id' => $book->id,
-            'title' => $book->title,
-            'author' => $book->author?->name,
-            'reader' => $book->reader?->name,
+            'id'          => $book->id,
+            'title'       => $book->title,
+            'author'      => $book->author?->name,
+            'reader'      => $book->reader?->name,
             'description' => $book->description,
-            'duration' => $book->duration,
-            // КОРРЕКТНАЯ ссылка для эмулятора Android
-            'cover_url' => $book->cover_url
+            'duration'    => $book->duration,
+            // Корректная ссылка для эмулятора Android
+            'cover_url'   => $book->cover_url
                 ? str_replace(['127.0.0.1', 'localhost'], '10.0.2.2', url('/storage/' . $book->cover_url))
                 : null,
-            'thumb_url' => $book->thumb_url
+            'thumb_url'   => $book->thumb_url
                 ? str_replace(['127.0.0.1', 'localhost'], '10.0.2.2', url('/storage/' . $book->thumb_url))
                 : null,
-            'genres' => $book->genres->map(function($genre) {
+            'genres'      => $book->genres->map(function ($genre) {
                 return [
-                    'id' => $genre->id,
-                    'name' => $genre->name
+                    'id'   => $genre->id,
+                    'name' => $genre->name,
                 ];
             })->values(),
-            'series' => $book->series?->name,
+            // ✅ Возвращаем корректные поля серии
+            'series'      => $book->series?->title,
+            'series_id'   => $book->series_id,
         ];
 
         return response()->json($result, 200, [], JSON_UNESCAPED_UNICODE);
@@ -365,10 +406,10 @@ Storage::disk('public')->put($thumbName, (string) $image->toJpeg(80));
             ->get()
             ->map(function ($chapter) {
                 return [
-                    'id' => $chapter->id,
-                    'duration' => $chapter->duration,
-                    'title' => $chapter->title,
-                    'order' => $chapter->order,
+                    'id'        => $chapter->id,
+                    'duration'  => $chapter->duration,
+                    'title'     => $chapter->title,
+                    'order'     => $chapter->order,
                     'audio_url' => $chapter->audio_path ? url('/audio/' . $chapter->id) : null,
                 ];
             })->values();
