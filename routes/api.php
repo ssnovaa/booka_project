@@ -26,6 +26,9 @@ use App\Http\Controllers\Api\RewardsController;
 
 use App\Http\Controllers\Api\CreditsController;
 
+// ✅ Subscriptions (Google Play)
+use App\Http\Controllers\Api\SubscriptionsController;
+
 /*
 |--------------------------------------------------------------------------
 | Public API
@@ -90,10 +93,17 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // Logout
     Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('throttle:30,1');
 
+    // ✅ me (источник истины по статусу подписки и данным авторизованного пользователя)
+    Route::get('/auth/me', [AuthController::class, 'me'])->middleware('throttle:120,1');
+
     // ✅ Rewarded Ads — ТОЛЬКО для авторизованных
     Route::post('/rewards/prepare', [RewardsController::class, 'prepare'])->middleware('throttle:60,1');
     Route::get('/rewards/status',   [RewardsController::class, 'status'])->middleware('throttle:120,1');
 
     // ✅ Списание секунд в бесплатном режиме — ТОЛЬКО авторизованные
     Route::post('/credits/consume', [CreditsController::class, 'consume'])->middleware('throttle:120,1');
+
+    // ✅ Subscriptions — проверка и статус подписки (Google Play)
+    Route::post('/subscriptions/play/verify', [SubscriptionsController::class, 'verifyGooglePlay'])->middleware('throttle:60,1');
+    Route::get('/subscriptions/status',       [SubscriptionsController::class, 'status'])->middleware('throttle:120,1');
 });
