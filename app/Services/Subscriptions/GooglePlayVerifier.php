@@ -76,18 +76,18 @@ class GooglePlayVerifier
         // Возможные значения: SUBSCRIPTION_STATE_ACTIVE, PAUSED, IN_GRACE_PERIOD, ON_HOLD, CANCELED, EXPIRED
         $state = $g['subscriptionState'] ?? null;
         $map = [
-            'SUBSCRIPTION_STATE_ACTIVE'       => 'active',
-            'SUBSCRIPTION_STATE_IN_GRACE'     => 'grace',
-            'SUBSCRIPTION_STATE_ON_HOLD'      => 'on_hold',
-            'SUBSCRIPTION_STATE_PAUSED'       => 'paused',
-            'SUBSCRIPTION_STATE_CANCELED'     => 'canceled',
-            'SUBSCRIPTION_STATE_EXPIRED'      => 'expired',
+            'SUBSCRIPTION_STATE_ACTIVE'          => 'active',
+            'SUBSCRIPTION_STATE_IN_GRACE_PERIOD' => 'grace',
+            'SUBSCRIPTION_STATE_ON_HOLD'         => 'on_hold',
+            'SUBSCRIPTION_STATE_PAUSED'          => 'paused',
+            'SUBSCRIPTION_STATE_CANCELED'        => 'canceled',
+            'SUBSCRIPTION_STATE_EXPIRED'         => 'expired',
         ];
         $status = $map[$state] ?? 'expired';
 
         // Время
         $start  = $g['startTime']  ?? null;
-        $renew  = $g['regionCode'] ?? null; // в V2 нет renewTime напрямую — оставим null
+        $renew  = null; // В V2 нет renewTime напрямую — оставляем null, см. https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2
         $expire = $g['expiryTime'] ?? ($g['lineItems'][0]['expiryTime'] ?? null);
 
         // acknowledge
