@@ -151,4 +151,23 @@ class AuthController extends Controller
 
         return response()->noContent();
     }
+
+    /**
+     * Профиль авторизованного пользователя (источник истины для статуса подписки)
+     * GET /api/auth/me
+     * headers: Authorization: Bearer <access>
+     */
+    public function me(Request $request)
+    {
+        /** @var \App\Models\User $u */
+        $u = $request->user();
+
+        return response()->json([
+            'id'         => $u->id,
+            'name'       => $u->name,
+            'email'      => $u->email,
+            'is_paid'    => (bool) $u->is_paid,
+            'paid_until' => $u->paid_until, // ISO-строка при касте datetime в модели User
+        ]);
+    }
 }

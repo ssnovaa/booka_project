@@ -17,6 +17,7 @@ use Laravel\Sanctum\HasApiTokens;
  * - password: string
  * - is_paid: bool
  * - is_admin: bool   ← прапорець адміністратора
+ * - paid_until: \Illuminate\Support\Carbon|null  ← ДОДАНО
  * - google_id: string|null
  * - avatar_url: string|null
  * - email_verified_at: \Illuminate\Support\Carbon|null
@@ -36,6 +37,7 @@ class User extends Authenticatable
         'is_paid',
         'google_id',
         'avatar_url',
+        // 'paid_until' свідомо не додаємо у fillable, щоб не масово присвоювати з клієнта
     ];
 
     /**
@@ -55,7 +57,8 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password'          => 'hashed',
             'is_paid'           => 'boolean',
-            'is_admin'          => 'boolean', // ← додано
+            'is_admin'          => 'boolean',
+            'paid_until'        => 'datetime', // ← ДОДАНО: для коректного ISO в JSON
         ];
     }
 
