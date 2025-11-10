@@ -8,6 +8,7 @@
     "require": {
         "php": "^8.2",
         "google/apiclient": "*",
+        "google/apiclient-services": "0.419",
         "google/auth": "1.42",
         "guzzlehttp/guzzle": "7.9",
         "intervention/image": "^3.11",
