@@ -16,11 +16,13 @@ use Laravel\Sanctum\HasApiTokens;
  * - email: string
  * - password: string
  * - is_paid: bool
- * - is_admin: bool   ← прапорець адміністратора
+ * - is_admin: bool    ← прапорець адміністратора
  * - paid_until: \Illuminate\Support\Carbon|null  ← ДОДАНО
  * - google_id: string|null
  * - avatar_url: string|null
  * - email_verified_at: \Illuminate\Support\Carbon|null
+ * - google_purchase_token: string|null  // ⚠️ ДОДАНО
+ * - google_product_id: string|null    // ⚠️ ДОДАНО
  */
 class User extends Authenticatable
 {
@@ -38,6 +40,10 @@ class User extends Authenticatable
         'google_id',
         'avatar_url',
         // 'paid_until' свідомо не додаємо у fillable, щоб не масово присвоювати з клієнта
+        
+        // ⚠️ ДОДАНО: Ці поля встановлюються сервером, але додамо їх про всяк випадок
+        'google_purchase_token',
+        'google_product_id',
     ];
 
     /**
@@ -46,6 +52,8 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        // ⚠️ ДОДАНО: Ховаємо токен від клієнта
+        'google_purchase_token',
     ];
 
     /**
@@ -69,6 +77,18 @@ class User extends Authenticatable
     {
         return $this->belongsToMany(\App\Models\ABook::class, 'a_book_user')->withTimestamps();
     }
+
+    // --- ДОДАНО ВИПРАВЛЕННЯ ---
+    /**
+     * Аліас для зв'язку «обрані книги» (для $user->load('favorites')).
+     * Це виправляє помилку "Call to undefined relationship [favorites]".
+     */
+    public function favorites()
+    {
+        // Цей код ідентичний 'favoriteBooks()'
+        return $this->belongsToMany(\App\Models\ABook::class, 'a_book_user')->withTimestamps();
+    }
+    // --- КІНЕЦЬ ВИПРАВЛЕННЯ ---
 
     /**
      * Зв’язок «прослуховування».

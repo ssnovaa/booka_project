@@ -13,15 +13,28 @@ class GooglePlayClient
 
     public function __construct(?string $keyFile = null, ?string $packageName = null)
     {
-        $keyFilePath = $keyFile ?? env('GOOGLE_PLAY_KEY_FILE');
-        $this->package = $packageName ?? env('GOOGLE_PLAY_PACKAGE', 'com.booka_app');
+        // --- ИСПРАВЛЕНИЕ: Читаем из config() вместо env() ---
+        
+        // 1. Берем относительный путь из КОНФИГА (config/services.php)
+        //    Это будет работать, даже если config:cache включен.
+        $keyFileRelative = $keyFile ?? config('services.google_play.key_file');
+        
+        // 2. Строим АБСОЛЮТНЫЙ путь к файлу в storage/app/
+        $keyFilePath = storage_path('app/' . $keyFileRelative);
+        
+        // 3. Берем имя пакета из КОНФИГА
+        $this->package = $packageName ?? config('services.google_play.package_name');
 
-        if (!$keyFilePath || !is_readable($keyFilePath)) {
-            throw new RuntimeException("Google Play key file is not readable at: $keyFilePath");
+        // 4. Проверяем
+        if (empty($keyFileRelative) || !is_readable($keyFilePath)) {
+            // Эта ошибка теперь будет намного понятнее
+            throw new RuntimeException("Google Play key file is NOT READABLE at: $keyFilePath (from config 'services.google_play.key_file')");
         }
+        
+        // --- КОНЕЦ ИСПРАВЛЕНИЯ ---
 
         $client = new GoogleClient();
-        $client->setAuthConfig($keyFilePath);
+        $client->setAuthConfig($keyFilePath); // Используем абсолютный путь
         $client->setScopes(['https://www.googleapis.com/auth/androidpublisher']);
 
         $this->service = new AndroidPublisher($client);

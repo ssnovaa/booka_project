@@ -22,10 +22,7 @@ class GooglePlayVerifier
     {
         $purchaseToken = $payload['purchaseToken'];
         $productId     = $payload['productId'];
-        
-        // --- ИСПРАВЛЕНИЕ 1: Читаем из config(), а не env() ---
-        $packageName   = $payload['packageName'] ?? config('services.google_play.package_name');
-        // --- КОНЕЦ ИСПРАВЛЕНИЯ 1 ---
+        $packageName   = $payload['packageName'] ?? env('GOOGLE_PLAY_PACKAGE', 'com.booka_app');
 
         $raw = $this->play->getSubscriptionV2($purchaseToken);
         $norm = $this->normalizeV2($raw);
@@ -81,7 +78,6 @@ class GooglePlayVerifier
         $map = [
             'SUBSCRIPTION_STATE_ACTIVE'       => 'active',
             'SUBSCRIPTION_STATE_IN_GRACE'     => 'grace',
-            'SUBSCRIPTION_STATE_IN_GRACE_PERIOD' => 'grace', // Добавил на всякий случай
             'SUBSCRIPTION_STATE_ON_HOLD'      => 'on_hold',
             'SUBSCRIPTION_STATE_PAUSED'       => 'paused',
             'SUBSCRIPTION_STATE_CANCELED'     => 'canceled',
@@ -91,12 +87,7 @@ class GooglePlayVerifier
 
         // Время
         $start  = $g['startTime']  ?? null;
-        
-        // --- ИСПРАВЛЕНИЕ 2 (Баг с 'UA' из логов) ---
-        // $renew  = $g['regionCode'] ?? null; // БАГ: 'regionCode' - это 'UA', а не дата.
-        $renew  = null; // ПРАВИЛЬНО: в V2 нет renewTime напрямую — оставим null
-        // --- КОНЕЦ ИСПРАВЛЕНИЯ 2 ---
-
+        $renew  = $g['regionCode'] ?? null; // в V2 нет renewTime напрямую — оставим null
         $expire = $g['expiryTime'] ?? ($g['lineItems'][0]['expiryTime'] ?? null);
 
         // acknowledge
@@ -109,7 +100,7 @@ class GooglePlayVerifier
             'order_id'        => $orderId,
             'status'          => $status,
             'started_at'      => $start ? Carbon::parse($start) : null,
-            'renewed_at'      => $renew ? Carbon::parse($renew) : null, // Теперь здесь будет null
+            'renewed_at'      => $renew ? Carbon::parse($renew) : null,
             'expires_at'      => $expire ? Carbon::parse($expire) : null,
             'acknowledged_at' => $ack ? now() : null,
             'canceled_at'     => $cancel ? Carbon::parse($cancel) : null,

@@ -5,31 +5,31 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Google\Client;
-use Google\Service\AndroidPublisher;
+// use Google\Client; // <- Удалено
+// use Google\Service\AndroidPublisher; // <- Удалено
 use App\Models\User;
 use Carbon\Carbon;
+use App\Services\Subscriptions\GooglePlayVerifier; // <- Добавлено
 
 class SubscriptionsController extends Controller
 {
     /**
-     * Верификация покупки Google Play (Subscriptions V2).
+     * Верификация покупки Google Play (через GooglePlayVerifier).
      *
      * Роут:
-     *   Route::post('/subscriptions/play/verify', [SubscriptionsController::class, 'verifyGooglePlay']);
+     * Route::post('/subscriptions/play/verify', [SubscriptionsController::class, 'verifyGooglePlay']);
      *
      * Поддерживает оба варианта ключей из клиента:
-     *   - camelCase: purchaseToken, productId, packageName (или без него)
-     *   - snake_case: purchase_token, product_id, package_name (или без него)
+     * - camelCase: purchaseToken, productId, packageName (или без него)
+     * - snake_case: purchase_token, product_id, package_name (или без него)
      */
-    public function verifyGooglePlay(Request $request)
+    public function verifyGooglePlay(Request $request, GooglePlayVerifier $verifier) // <-- Внедряем сервис
     {
-        // Достаём значения из любого формата
+        // 1. Валидация
         $purchaseToken = $request->input('purchaseToken', $request->input('purchase_token'));
         $productId     = $request->input('productId',     $request->input('product_id'));
-        $packageFromRq = $request->input('packageName',   $request->input('package_name'));
+        $packageName   = $request->input('packageName',   $request->input('package_name')); // Сервис сам подставит default, если null
 
-        // Валидируем минимум
         if (empty($purchaseToken) || empty($productId)) {
             return response()->json([
                 'error'   => 'Validation failed',
@@ -40,92 +40,50 @@ class SubscriptionsController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        // Имя пакета и путь к ключу берём из .env (как у тебя в проверках)
-        $packageName = $packageFromRq ?: env('GOOGLE_PLAY_PACKAGE', 'com.booka_app');
-        $credentialsPath = env('GOOGLE_PLAY_KEY_FILE'); // напр. C:/project/booka_project/storage/keys/service-account.json
-
-        if (empty($credentialsPath) || !is_file($credentialsPath)) {
-            Log::error('Google Play key file is missing or invalid', [
-                'user_id' => $user?->id,
-                'path'    => $credentialsPath,
-            ]);
-            return response()->json(['error' => 'Server configuration error'], 500);
-        }
-
+        // 2. Вызов сервиса (Механизм 2)
         try {
-            // 1) Авторизация Google API
-            $client = new Client();
-            $client->setAuthConfig($credentialsPath);
-            $client->addScope(AndroidPublisher::ANDROIDPUBLISHER);
-            $publisher = new AndroidPublisher($client);
-
-            // 2) Вызов V2: purchases.subscriptionsv2.get(packageName, token)
-            $purchase = $publisher->purchases_subscriptionsv2->get($packageName, $purchaseToken);
-
-            // 3) Разбор ответа V2
-            // Основные поля:
-            //   subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE' | ...
-            //   lineItems[0].productId, lineItems[0].expiryTime (ISO)
-            $state     = $purchase->getSubscriptionState();    // строка
-            $lineItems = $purchase->getLineItems() ?: [];
-            $first     = $lineItems[0] ?? null;
-
-            $productFromGoogle = $first ? ($first->getProductId() ?? null) : null;
-            $expiryIso         = $first ? ($first->getExpiryTime() ?? null) : null;
-
-            Log::info('Google verify (V2) response', [
-                'user_id' => $user?->id,
-                'state'   => $state,
-                'product' => $productFromGoogle,
-                'expiry'  => $expiryIso,
-                'req'     => ['productId' => $productId, 'packageName' => $packageName],
+            // verifyAndUpsert сам вызовет Google API, создаст/обновит Subscription
+            // и обновит $user->is_paid / $user->paid_until
+            $subscription = $verifier->verifyAndUpsert($user, [
+                'purchaseToken' => $purchaseToken,
+                'productId'     => $productId,
+                'packageName'   => $packageName,
             ]);
 
-            // Доп.проверка соответствия товара (на случай, если клиент прислал не тот id)
-            if (!empty($productFromGoogle) && $productFromGoogle !== $productId) {
-                Log::warning('ProductId mismatch between client and Google response', [
-                    'user_id' => $user?->id,
-                    'client_product' => $productId,
-                    'google_product' => $productFromGoogle,
-                ]);
-                // Не валим сразу ошибкой — у Google могут быть заменённые/сконфигуренные планы.
-                // При желании можно вернуть 400.
-            }
+            Log::info('Google verify (V2 via Service) successful', [
+                'user_id' => $user->id,
+                'sub_id'  => $subscription->id,
+                'status'  => $subscription->status,
+            ]);
 
-            // 4) Проверка статуса
-            if ($state === 'SUBSCRIPTION_STATE_ACTIVE') {
-                $user->is_paid = true;
+            // 3. Проверка статуса (сервис уже обновил $user->is_paid)
+            // Мы перезагружаем пользователя, чтобы получить свежие данные is_paid
+            $user->refresh();
 
-                if (!empty($expiryIso)) {
-                    // expiryTime в V2 уже ISO8601, парсим как Carbon
-                    $user->paid_until = Carbon::parse($expiryIso);
-                }
-
-                $user->save();
-
+            if ($user->is_paid) {
                 // Возвращаем как в /auth/me (для обновления клиента)
                 $user->load('favorites', 'listens.book', 'listens.chapter');
                 $user->append('credits');
 
                 return response()->json([
                     'success' => true,
-                    'state'   => $state,
-                    'product' => $productFromGoogle ?: $productId,
-                    'expiry'  => $expiryIso,
+                    'state'   => $subscription->status, // 'active', 'grace', 'on_hold' и т.д.
+                    'product' => $subscription->product_id,
+                    'expiry'  => $subscription->expires_at?->toIso8601String(),
                     'user'    => $user,
                 ]);
             }
 
-            // Не активна/приостановлена/просрочена
+            // Не активна (например, 'expired' или 'canceled')
             return response()->json([
                 'success' => false,
-                'state'   => $state,
+                'state'   => $subscription->status,
                 'message' => 'Subscription not active',
             ], 400);
 
         } catch (\Google\Service\Exception $e) {
             // Ошибка со стороны Google API
-            Log::error('Google API error during verification (V2)', [
+            Log::error('Google API error during verification (V2 via Service)', [
                 'user_id' => $user?->id,
                 'code'    => $e->getCode(),
                 'msg'     => $e->getMessage(),
@@ -137,7 +95,7 @@ class SubscriptionsController extends Controller
 
         } catch (\Throwable $e) {
             // Общая ошибка сервера
-            Log::error('General error during verification (V2)', [
+            Log::error('General error during verification (V2 via Service)', [
                 'user_id' => $user?->id,
                 'msg'     => $e->getMessage(),
             ]);
