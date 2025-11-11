@@ -38,15 +38,22 @@ class GooglePlayVerifier
                 $sub->purchase_token = $purchaseToken;
             }
 
-            $sub->order_id         = $norm['order_id'] ?? null;
-            $sub->status           = $norm['status'];
-            $sub->started_at       = $norm['started_at'];
-            $sub->renewed_at       = $norm['renewed_at'];
-            $sub->expires_at       = $norm['expires_at'];
-            $sub->acknowledged_at  = $norm['acknowledged_at'];
-            $sub->canceled_at      = $norm['canceled_at'];
-            $sub->raw_payload      = $raw;
-            $sub->latest_rtdn_at   = now();
+            $acknowledged        = $norm['acknowledged'] ?? false;
+            $sub->order_id       = $norm['order_id'] ?? null;
+            $sub->status         = $norm['status'];
+            $sub->started_at     = $norm['started_at'];
+            $sub->renewed_at     = $norm['renewed_at'];
+            $sub->expires_at     = $norm['expires_at'];
+            $sub->canceled_at    = $norm['canceled_at'];
+            $sub->raw_payload    = $raw;
+            $sub->latest_rtdn_at = now();
+
+            if ($acknowledged) {
+                $sub->acknowledged_at ??= now();
+            } else {
+                $sub->acknowledged_at = null;
+            }
+
             $sub->save();
 
             // Обновляем пользователя (денормализация)
@@ -76,18 +83,18 @@ class GooglePlayVerifier
         // Возможные значения: SUBSCRIPTION_STATE_ACTIVE, PAUSED, IN_GRACE_PERIOD, ON_HOLD, CANCELED, EXPIRED
         $state = $g['subscriptionState'] ?? null;
         $map = [
-            'SUBSCRIPTION_STATE_ACTIVE'       => 'active',
-            'SUBSCRIPTION_STATE_IN_GRACE'     => 'grace',
-            'SUBSCRIPTION_STATE_ON_HOLD'      => 'on_hold',
-            'SUBSCRIPTION_STATE_PAUSED'       => 'paused',
-            'SUBSCRIPTION_STATE_CANCELED'     => 'canceled',
-            'SUBSCRIPTION_STATE_EXPIRED'      => 'expired',
+            'SUBSCRIPTION_STATE_ACTIVE'          => 'active',
+            'SUBSCRIPTION_STATE_IN_GRACE_PERIOD' => 'grace',
+            'SUBSCRIPTION_STATE_ON_HOLD'         => 'on_hold',
+            'SUBSCRIPTION_STATE_PAUSED'          => 'paused',
+            'SUBSCRIPTION_STATE_CANCELED'        => 'canceled',
+            'SUBSCRIPTION_STATE_EXPIRED'         => 'expired',
         ];
         $status = $map[$state] ?? 'expired';
 
         // Время
         $start  = $g['startTime']  ?? null;
-        $renew  = $g['regionCode'] ?? null; // в V2 нет renewTime напрямую — оставим null
+        $renew  = null; // В V2 нет renewTime напрямую — оставляем null, см. https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2
         $expire = $g['expiryTime'] ?? ($g['lineItems'][0]['expiryTime'] ?? null);
 
         // acknowledge
@@ -97,13 +104,13 @@ class GooglePlayVerifier
         $cancel = $g['canceledStateContext']['userInitiatedCancellation']['cancelTime'] ?? null;
 
         return [
-            'order_id'        => $orderId,
-            'status'          => $status,
-            'started_at'      => $start ? Carbon::parse($start) : null,
-            'renewed_at'      => $renew ? Carbon::parse($renew) : null,
-            'expires_at'      => $expire ? Carbon::parse($expire) : null,
-            'acknowledged_at' => $ack ? now() : null,
-            'canceled_at'     => $cancel ? Carbon::parse($cancel) : null,
+            'order_id'     => $orderId,
+            'status'       => $status,
+            'started_at'   => $start ? Carbon::parse($start) : null,
+            'renewed_at'   => $renew ? Carbon::parse($renew) : null,
+            'expires_at'   => $expire ? Carbon::parse($expire) : null,
+            'acknowledged' => $ack,
+            'canceled_at'  => $cancel ? Carbon::parse($cancel) : null,
         ];
     }
 }
