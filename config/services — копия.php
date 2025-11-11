@@ -39,12 +39,5 @@ return [
     'client_id' => env('GOOGLE_CLIENT_ID'),
 	],
 
-    // --- ВОТ ИСПРАВЛЕНИЕ: ДОБАВЬ ЭТОТ БЛОК ---
-    'google_play' => [
-        // Эта строка "пропустит" твою переменную из .env в кеш конфига
-        'key_file' => env('GOOGLE_PLAY_KEY_FILE'), // (убедись, что в .env есть 'keys/service-account.json')
-        'package_name' => env('GOOGLE_PLAY_PACKAGE', 'com.booka_app'),
-    ],
-    // --- КОНЕЦ БЛОКА ---
 
 ];
