@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use App\Services\CreditsService; // ᐊ===== 'USE' ОСТАЕТСЯ
 
 /**
  * Модель користувача.
@@ -111,4 +112,32 @@ class User extends Authenticatable
                   ->where('user_id', $this->id);
         })->with('author');
     }
+
+    // ᐊ===============================================================
+    //   ✅✅✅ ОБНОВЛЕННОЕ ИСПРАВЛЕНИЕ ДЛЯ ОШИБКИ 500 ✅✅✅
+    // ᐊ===============================================================
+    /**
+     * Аксессор для "кредитов" (баланса секунд).
+     * Вызывается через $user->credits или $user->append('credits').
+     *
+     * @return array
+     */
+    public function getCreditsAttribute(): array
+    {
+        /** @var \App\Services\CreditsService $service */
+        $service = app(CreditsService::class); 
+        
+        // ‼️ ИСПРАВЛЕНО: 
+        // Вызываем `getSeconds()`, который существует в CreditsService,
+        // и передаем $this->id (int), как он ожидает.
+        $seconds = $service->getSeconds($this->id);
+        
+        // Возвращаем массив, который ожидает API (и контроллер)
+        return [
+            'seconds_left' => $seconds,
+        ];
+    }
+    // ᐊ===============================================================
+    //   КІНЕЦЬ ВИПРАВЛЕННЯ
+    // ᐊ===============================================================
 }
