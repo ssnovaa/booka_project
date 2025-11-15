@@ -65,6 +65,15 @@ Route::match(['GET','POST'], '/admob/ssv', [RewardsController::class, 'admobSsv'
 // ===== Профиль (публичный; контроллер сам корректно обрабатывает гостя) =====
 Route::get('/profile', [UserApiController::class, 'profile'])->middleware('throttle:120,1');
 
+
+// ᐊ===============================================================
+//   ✅✅✅ ДОДАНО ВЕБХУК ДЛЯ GOOGLE RTDN ✅✅✅
+// ᐊ===============================================================
+// Цей роут має бути публічним, оскільки до нього звертається Google
+Route::post('/webhooks/google/rtdn', [App\Http\Controllers\Api\GoogleWebhookController::class, 'handleRtdn']);
+// ᐊ===============================================================
+
+
 /*
 |--------------------------------------------------------------------------
 | Private API (auth:sanctum)
