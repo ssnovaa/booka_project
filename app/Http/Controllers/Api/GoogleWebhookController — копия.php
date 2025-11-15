@@ -4,9 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Subscription;
-use App\Models\DeviceToken; // ᐊ===== Импорт
+use App\Models\DeviceToken; // ᐊ===== ДОДАЙТЕ ЦЕ
 use App\Services\Subscriptions\GooglePlayVerifier;
-use App\Services\FcmService; // ᐊ===== Импорт
+use App\Services\FcmService; // ᐊ===== ДОДАЙТЕ ЦЕ
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -14,7 +14,7 @@ class GoogleWebhookController extends Controller
 {
     /**
      * Обробка сповіщень RTDN від Google Pub/Sub.
-     * * ‼️ ИСПРАВЛЕНА ЛОГИКА ОТПРАВКИ PUSH
+     * * ‼️ МИ ДОДАЛИ FcmService ДЛЯ СПОВІЩЕННЯ КЛІЄНТА
      */
     public function handleRtdn(Request $request, GooglePlayVerifier $verifier, FcmService $fcmService)
     {
@@ -44,8 +44,7 @@ class GoogleWebhookController extends Controller
 
         if (!$subscription || !$subscription->user) {
             Log::error('RTDN: Отримано токен, якого немає в нашій БД', ['token' => $purchaseToken]);
-            // Отвечаем 200, чтобы Google не слал повторно
-            return response()->json(['status' => 'subscription_not_found'], 200);
+            return response()->json(['status' => 'subscription_not_found']);
         }
 
         $user = $subscription->user;
@@ -68,27 +67,24 @@ class GoogleWebhookController extends Controller
                 'new_status' => $subscription->status
             ]);
 
-            // 5. ‼️ ИСПРАВЛЕННЫЙ ШАГ: НАДСИЛАЄМО ТИХИЙ PUSH, ЯКЩО СТАТУС ЗМІНИВСЯ
+            // 5. ‼️ НОВИЙ КРОК: НАДСИЛАЄМО ТИХИЙ PUSH, ЯКЩО СТАТУС ЗМІНИВСЯ
             if ($wasPaid && !$user->is_paid) {
                 Log::info('RTDN: Статус змінився (був платний -> став безкоштовний). Надсилаємо push.', ['user_id' => $user->id]);
                 
                 $tokens = DeviceToken::where('user_id', $user->id)
-                                    ->pluck('token')
-                                    ->all();
+                                     ->pluck('token')
+                                     ->all();
 
                 if (!empty($tokens)) {
-                    Log::info("RTDN: Найдено ".count($tokens)." токенов для User {$user->id}. Отправка...");
-
-                    // ‼️ ИСПРАВЛЕНИЕ 1: Используем sendToToken в цикле
-                    foreach ($tokens as $token) {
-                        $fcmService->sendToToken(
-                            $token, 
-                            null, // title = null
-                            null, // body = null
-                            // ‼️ ИСПРАВЛЕНИЕ 2: Ключ должен быть 'subscription_update'
-                            ['type' => 'subscription_update']
-                        );
-                    }
+                    // Надсилаємо "тихий" push (data-only)
+                    // Клієнт (Flutter) має бути налаштований на отримання
+                    // повідомлень з полем 'type' = 'status_update'
+                    $fcmService->sendPush(
+                        $tokens, 
+                        null,  // title = null
+                        null,  // body = null
+                        ['type' => 'status_update'] // ᐊ===== Тільки дані
+                    );
                 }
             }
 
@@ -97,8 +93,7 @@ class GoogleWebhookController extends Controller
                 'user_id' => $user->id,
                 'msg'     => $e->getMessage(),
             ]);
-            // Отвечаем 200, чтобы Google не зациклился
-            return response()->json(['status' => 'server_error'], 200);
+            return response()->json(['status' => 'server_error'], 500);
         }
 
         // 6. Відповідаємо 200 OK
